@@ -1,0 +1,675 @@
+vdiff --git a/extensions/deepCABAC/source/Lib/EncLib/BinEncoder.cpp b/extensions/deepCABAC/source/Lib/EncLib/BinEncoder.cpp
+index f7465fc..8705216 100755
+--- a/extensions/deepCABAC/source/Lib/EncLib/BinEncoder.cpp
++++ b/extensions/deepCABAC/source/Lib/EncLib/BinEncoder.cpp
+@@ -42,6 +42,12 @@ NON-INFRINGEMENT WITH RESPECT TO THIS SOFTWARE.
+ #include "BinEncoder.h"
+ #include <bitset>
+ #include <iostream>
++#include <fstream> 
++#include <string>
++#include <ctime>
++
++
++//#define DEBUG
+ 
+ #if _WIN32
+ inline uint32_t __builtin_clz(uint32_t x)
+@@ -64,6 +70,8 @@ void BinEnc::startBinEncoder()
+     m_Range              = 510;
+     m_BitsLeft           = 23;
+     m_NumBufferedBytes   = 0;
++    count_push_back      = 0;
++    indx_count_push_back = 0;
+ }
+ 
+ 
+@@ -72,16 +80,137 @@ void BinEnc::setByteStreamBuf( std::vector<uint8_t> *byteStreamBuf )
+     m_ByteBuf = byteStreamBuf;
+ }
+ 
++void BinEnc::showCurrentInfo(void)
++{
++#if 0//def DEBUG
++    std::cout << "[Info][showCurrentInfo] (m_Low, m_Range, m_BitsLeft): " << m_Low << "(0x" << std::hex << m_Low << std::dec << ") , " << m_Range << " , " << m_BitsLeft \
++        << " , m_NumBufferedBytes: " << m_NumBufferedBytes << " , m_BufferedByte: 0x" << std::hex << (uint32_t)m_BufferedByte << std::dec << std::endl;
++#endif
++}
++
++void BinEnc::showPushBackCount(int32_t weight)
++{
++#ifdef DEBUG
++    std::cout << "[Info][showCurrentInfo] count_push_back: " << count_push_back << std::endl;
++#endif
++    arry_count_push_back_info[indx_count_push_back][0] = weight;
++    arry_count_push_back_info[indx_count_push_back][1] = count_push_back;
++    indx_count_push_back++;
++    count_push_back = 0;
++}
++
++void BinEnc::showAllPushBackCount(const char* paramName, uint8_t encoderId, uint32_t cmpr_seq_indx)
++{
++    /*
++    time_t rawtime;
++    struct tm * timeinfo;
++    char fName[80];
++    time (&rawtime);
++    timeinfo = localtime(&rawtime);
++    strftime(fName, 80, "%d-%m-%Y %H-%M-%S", timeinfo);
++    */
++    
++    char folderPath[] = "./dennis_test/";
++    char subfolderPath_encoder1[] = "encoder1/";
++    char subfolderPath_encoder2[] = "encoder2/";
++    char subfolderPath_sideInfo[] = "sideInfo/";
++    char strSeqIndx[6];
++    char fName[201];
++    char fNameDim[201];
++    uint8_t write_indx = 0; // 0: write quant. value
++                            // 1: write push_back count
++
++    sprintf(strSeqIndx, "%03lu", cmpr_seq_indx);
++
++    memset(fName, 0x0, sizeof(fName));
++    memset(fNameDim, 0x0, sizeof(fName));
++    strcpy(fName, folderPath);
++    strcpy(fNameDim, fName);
++    
++    if (encoderId == 1) {
++        strcat(fName, subfolderPath_encoder1);
++        strcat(fName, strSeqIndx);
++        strcat(fName, "_");
++        strcat(fName, paramName);
++        
++        if (write_indx == 0) {
++            strcat(fName, "_quantValue");
++        } else {
++            strcat(fName, "_pushback");
++        }
++
++        strcat(fNameDim, subfolderPath_sideInfo);
++        strcat(fNameDim, subfolderPath_encoder1);
++        strcat(fNameDim, strSeqIndx);
++        strcat(fNameDim, "_");
++        strcat(fNameDim, paramName);
++        strcat(fNameDim, "_Dim");
++    } else {
++        strcat(fName, subfolderPath_encoder2);
++        strcat(fName, strSeqIndx);
++        strcat(fName, "_");
++        strcat(fName, paramName);
++        
++        if (write_indx == 0) {
++            strcat(fName, "_quantValue");
++        } else {
++            strcat(fName, "_pushback");
++        }
++
++        strcat(fNameDim, subfolderPath_sideInfo);
++        strcat(fNameDim, subfolderPath_encoder2);
++        strcat(fNameDim, strSeqIndx);
++        strcat(fNameDim, "_");
++        strcat(fNameDim, paramName);
++        strcat(fNameDim, "_Dim");
++    }
++
++    std::ofstream file(fName);
++
++    for (uint32_t i = 0; i < indx_count_push_back; i++) {
++        //std::cout << arry_count_push_back_info[i][1] << std::endl;
++        file << arry_count_push_back_info[i][write_indx] << "\n";
++    }
++
++    file.close();
++
++    indx_count_push_back = 0;
++    count_push_back = 0;
++
++    // write dimension info.
++    file.open(fNameDim);
++
++    for (uint32_t i = 0; i < sideInfoNum; i++) {
++        file << sideInfo[i] << "\n";
++    }
++
++    file.close();
++
++    for (uint32_t i = 0; i < sideInfoNum; i++) {
++        sideInfo[i] = -1;
++    }
++}
++
+ 
+ void BinEnc::encodeBin( uint32_t bin, SBMPCtx &ctxMdl )
+ {
++//    std::cout << "[Info][encodeBin] begin ================>" << std::endl;
++
++//    std::cout << "[DBG][encodeBin - 1] call encodeBinNoUpdate()" << std::endl;
+     encodeBinNoUpdate( bin, ctxMdl );
++
++//    std::cout << "[DBG][encodeBin - 2] call updateState()" << std::endl;
+     ctxMdl.updateState( -(int32_t)bin );
++    showCurrentInfo();
++//    std::cout << "[Info][encodeBin] ================> end" << std::endl;
+ }
+ 
+ 
+ void BinEnc::encodeBinNoUpdate( uint32_t bin, const SBMPCtx &ctxMdl )
+ {
++//    std::cout << "[Info][encodeBinNoUpdate] begin ================>" << std::endl;
++    showCurrentInfo();
++
+     uint32_t rlps = ctxMdl.getRLPS( m_Range );
+     m_Range -= rlps;
+ 
+@@ -108,6 +237,8 @@ void BinEnc::encodeBinNoUpdate( uint32_t bin, const SBMPCtx &ctxMdl )
+         if (m_BitsLeft < 12)
+             write_out();
+     }
++
++//    std::cout << "[Info][encodeBinNoUpdate] ================> end" << std::endl;
+ }
+ 
+ 
+@@ -128,8 +259,11 @@ void BinEnc::encodeBinEP( uint32_t bin )
+ 
+ void BinEnc::encodeBinsEP( uint32_t bins, uint32_t numBins )
+ {
+-    CHECK( bins > ( 1u << numBins ), printf( "%i can not be coded with %i EP-Bins", bins, numBins ) )
++    //CHECK( bins > ( 1u << numBins ), printf( "%i can not be coded with %i EP-Bins", bins, numBins ) )
+     
++//    std::cout << "[Info][encodeBinsEP] begin: encode bins EP ================> bins: " << bins << " , numBins: " << numBins << std::endl;
++    showCurrentInfo();
++
+     if (m_Range == 256)
+     {
+         uint32_t remBins = numBins;
+@@ -169,6 +303,9 @@ void BinEnc::encodeBinsEP( uint32_t bins, uint32_t numBins )
+     {
+         write_out();
+     }
++
++    showCurrentInfo();
++//    std::cout << "[Info][encodeBinsEP] ================> end" << std::endl;
+ }
+ 
+ 
+@@ -226,30 +363,37 @@ void BinEnc::encodeRemAbsLevel( uint32_t remAbsLevel, uint32_t goRicePar, bool u
+     }
+ }
+ 
+-void BinEnc::encodeRemAbsLevelNew( uint32_t remAbsLevel, std::vector<SBMPCtx>& ctxStore )
++void BinEnc::encodeRemAbsLevelNew( uint32_t remAbsLevel, std::vector<SBMPCtx>& ctxStore, uint32_t numGreaterFlagsCoded)
+ {
++//    std::cout << "[Info][encodeRemAbsLevelNew] begin ================> remAbsLevel: " << remAbsLevel << std::endl;
+     uint32_t remLevel = uint32_t(remAbsLevel);
+     uint32_t log2NumElemNextGroup = 0;
++    uint32_t encodeNum = numGreaterFlagsCoded;
+ 
+     uint32_t remAbsBaseLevel = 0;
+     uint32_t ctxIdx = (6 + g_NumGtxFlags * 2);
+ 
+     if (remLevel > 0)
+     {
++//        std::cout << "[DBG][encodeRemAbsLevelNew - 1] call encodeBin() for " << encodeNum << "th bit: (ctxId, remAbs)=> " << ctxIdx << ", 1)" << std::endl;
+         encodeBin(1, ctxStore[ ctxIdx ]);
++        encodeNum++;
+         remAbsBaseLevel += (1 << log2NumElemNextGroup);
+         ctxIdx++;
+         log2NumElemNextGroup++;
+     }
+     else
+     {
++//        std::cout << "[DBG][encodeRemAbsLevelNew - 2] call encodeBin() for " << encodeNum << "th bit: (ctxId, remAbs)=> " << ctxIdx << ", 0)" << std::endl;
+         encodeBin(0, ctxStore[ ctxIdx ]);
+         return;
+     }
+ 
+     while ( remLevel >  (remAbsBaseLevel + (1 << log2NumElemNextGroup) -1 ) )
+     {
++//        std::cout << "[DBG][encodeRemAbsLevelNew - 3] call encodeBin() for " << encodeNum << "th bit: (ctxId, remAbs)=> " << ctxIdx << ", 1)" << std::endl;
+         encodeBin(1 , ctxStore[ctxIdx]);
++        encodeNum++;
+         remAbsBaseLevel += (1 << log2NumElemNextGroup);
+         ctxIdx++;
+         log2NumElemNextGroup++;
+@@ -257,19 +401,35 @@ void BinEnc::encodeRemAbsLevelNew( uint32_t remAbsLevel, std::vector<SBMPCtx>& c
+ 
+     uint32_t bins = remLevel - remAbsBaseLevel;
+ 
++//    std::cout << "[DBG][encodeRemAbsLevelNew - 4] call encodeBin() for " << encodeNum << "th bit: (ctxId, remAbs)=> " << ctxIdx << ", 0)" << std::endl;
+     encodeBin(0, ctxStore[ ctxIdx ]);
++    encodeNum++;
++    
+     encodeBinsEP( bins, log2NumElemNextGroup );
++
++//    std::cout << "[Info][encodeRemAbsLevelNew] ================> end" << std::endl;
+ }
+ 
+ 
+ void BinEnc::write_out()
+ {
++//    std::cout << "[Info][write_out] begin ================>" << std::endl;
++    showCurrentInfo();
++
++    // Ready to flush bit[23:m_BitsLeft] to buffer
+     uint32_t lead_byte = m_Low >> (24 - m_BitsLeft);
++    
++    // It means (24 - m_BitsLeft) has 8 bits ? If so, why ?
+     m_BitsLeft += 8;
++
++    // As bit[m_BitsLeft:0] doesn't contain data, we 
+     m_Low &= 0xffffffffu >> m_BitsLeft;
+     if (lead_byte == 0xff)
+     {
+         m_NumBufferedBytes++;
++#ifdef DEBUG
++        std::cout << "[DBG][write_out - 2][update] lead_byte == 0xff , m_NumBufferedBytes => " << m_NumBufferedBytes << std::endl;
++#endif
+     }
+     else
+     {
+@@ -278,11 +438,28 @@ void BinEnc::write_out()
+             uint32_t carry      = lead_byte >> 8;
+             uint8_t  byte       = m_BufferedByte + carry;
+             m_BufferedByte       = lead_byte & 0xff;
++#ifdef DEBUG
++            std::cout << "[DBG][write_out - 3][update] m_BufferedByte: 0x" << std::hex << (uint32_t)m_BufferedByte << std::dec << std::endl;
++            std::cout << "[DBG][write_out - 4] push_back(): 0x" << std::hex << (uint32_t)byte << std::dec << std::endl;
++#endif
++//            std::cout << "[DBG][write_out - 1] push_back(): 0x" << std::hex << (uint32_t)byte << " , update m_BufferedByte=> 0x"\
++                    << (uint32_t)m_BufferedByte << std::dec << std::endl;
+             m_ByteBuf->push_back(byte);
++
++            count_push_back++;
++
+             byte                = (0xff + carry) & 0xff;
++#ifdef DEBUG
++            std::cout << "[DBG][write_out - 5] new byte: 0x" << std::hex << (uint32_t)byte << std::dec << std::endl;
++#endif
+             while (m_NumBufferedBytes > 1)
+             {
++//                std::cout << "[DBG][write_out - 2] push_back(): 0x" << std::hex << (uint32_t)byte << " , update m_BufferedByte=> 0x"\
++                        << (uint32_t)m_BufferedByte << std::dec << std::endl;
+                 m_ByteBuf->push_back(byte);
++
++                count_push_back++;
++
+                 m_NumBufferedBytes--;
+             }
+         }
+@@ -290,12 +467,19 @@ void BinEnc::write_out()
+         {
+             m_NumBufferedBytes = 1;
+             m_BufferedByte      = lead_byte;
++
++//            std::cout << "[DBG][write_out - 3] set m_NumBufferedBytes = 1 , m_BufferedByte: 0x" << std::hex << (uint32_t)lead_byte << std::dec << std::endl;
+         }
+     }
++
++    showCurrentInfo();
++//    std::cout << "[Info][write_out] ================> end" << std::endl;
+ }
+ 
+ void BinEnc::encodeBinTrm( unsigned bin )
+ {
++//  std::cout << "[Info][encodeBinTrm] begin ================>" << std::endl;
++//  showCurrentInfo();       
+   m_Range -= 2;
+   if( bin )
+   {
+@@ -318,30 +502,49 @@ void BinEnc::encodeBinTrm( unsigned bin )
+   {
+     write_out();
+   }
++
++//  showCurrentInfo();
++//  std::cout << "[Info][encodeBinTrm] ================> end" << std::endl;
+ }
+ 
+ void BinEnc::finish()
+ {
++//  std::cout << "[Info][finish] begin ================>" << std::endl;
++//  showCurrentInfo();    
++
+   if( m_Low >> ( 32 - m_BitsLeft ) )
+   {
++//    std::cout << "[DBG][finish - 1] push_back(): 0x" << std::hex << (uint32_t)(m_BufferedByte + 1) << std::dec << std::endl;
+     m_ByteBuf->push_back( m_BufferedByte + 1 );
+     while( m_NumBufferedBytes > 1 )
+     {
++//      std::cout << "[DBG][finish - 2] push_back(): 0x00" << std::endl;
+       m_ByteBuf->push_back( 0x00 );
+       m_NumBufferedBytes--;
++#ifdef DEBUG
++      std::cout << "[DBG][finish - 4][update] m_NumBufferedBytes: " << m_NumBufferedBytes << std::endl;
++#endif
+     }
+     m_Low -= 1 << ( 32 - m_BitsLeft );
++#ifdef DEBUG
++    std::cout << "[DBG][finish - 5][update] m_Low: " << m_Low << std::endl;
++#endif
+   }
+   else
+   {
+     if( m_NumBufferedBytes > 0 )
+     {
++//      std::cout << "[DBG][finish - 3] push_back(): 0x" << std::hex << (uint32_t)m_BufferedByte << std::dec << std::endl;
+       m_ByteBuf->push_back( m_BufferedByte );
+     }
+     while( m_NumBufferedBytes > 1 )
+     {
++//      std::cout << "[DBG][finish - 4] push_back(): 0xff" << std::endl;
+       m_ByteBuf->push_back( 0xff );
+       m_NumBufferedBytes--;
++#ifdef DEBUG
++      std::cout << "[DBG][finish - 8][update] m_NumBufferedBytes: " << m_NumBufferedBytes << std::endl;
++#endif
+     }
+   }
+ 
+@@ -350,11 +553,21 @@ void BinEnc::finish()
+    m_Low <<= 1;
+    m_Low++;
+    m_BitsLeft--;
++#ifdef DEBUG
++   std::cout << "[DBG][finish - 9][update] m_Low: " << m_Low << " , m_BitsLeft: " << m_BitsLeft << std::endl;
++#endif
+    // left align
+    m_Low <<= (32 - (24-m_BitsLeft) );
++#ifdef DEBUG
++   std::cout << "[DBG][finish - 10][update] m_Low: " << m_Low << std::endl;
++#endif
+    // write out starting from the leftmost byte
+    for( int i = 0; i < 24 - m_BitsLeft; i+=8 )
+    {
++//     std::cout << "[DBG][finish - 5] push_back(): 0x" << std::hex << (uint32_t)((m_Low >> (24-i)) & 0xFF) << std::dec << std::endl;
+      m_ByteBuf->push_back( (m_Low >> (24-i)) & 0xFF );
+    }
++
++//  showCurrentInfo();
++//  std::cout << "[Info][finish] ================> end" << std::endl;
+ }
+diff --git a/extensions/deepCABAC/source/Lib/EncLib/BinEncoder.h b/extensions/deepCABAC/source/Lib/EncLib/BinEncoder.h
+index fd1954b..8d6c96e 100755
+--- a/extensions/deepCABAC/source/Lib/EncLib/BinEncoder.h
++++ b/extensions/deepCABAC/source/Lib/EncLib/BinEncoder.h
+@@ -42,6 +42,8 @@ NON-INFRINGEMENT WITH RESPECT TO THIS SOFTWARE.
+ #include "CommonLib/ContextModel.h"
+ 
+ extern uint32_t g_NumGtxFlags;
++extern uint32_t  sideInfo[];
++extern uint32_t sideInfoNum;
+ 
+ class BinEnc
+ {
+@@ -58,11 +60,14 @@ public:
+     void      encodeBinsEP         ( uint32_t bins, uint32_t numBins     );
+ 
+     void      encodeRemAbsLevel    ( uint32_t remAbsLevel, uint32_t goRicePar, bool useLimitedPrefixLength, uint32_t maxLog2TrDynamicRange );
+-    void      encodeRemAbsLevelNew ( uint32_t remAbsLevel, std::vector<SBMPCtx>& ctxStore                                                  );
++    void      encodeRemAbsLevelNew ( uint32_t remAbsLevel, std::vector<SBMPCtx>& ctxStore, uint32_t numGreaterFlagsCoded                                                  );
+ 
+     void      encodeBinTrm         ( unsigned bin );
+     void      finish               (              );
+     void      terminate_write      (              );
++    void      showCurrentInfo (void);
++    void      showPushBackCount(int32_t weight);
++    void      showAllPushBackCount(const char* paramName, uint8_t encoderId, uint32_t cmpr_seq_indx);
+ protected:
+     void      write_out         ();
+ private:
+@@ -73,6 +78,9 @@ private:
+     uint32_t                m_NumBufferedBytes;
+     uint32_t                m_BitsLeft;
+     static const uint32_t   m_auiGoRiceRange[ 10 ];
++    int32_t                count_push_back;
++    int32_t                arry_count_push_back_info[7560000][2];
++    uint32_t                indx_count_push_back;
+ };
+ 
+ #endif // !__BINENC__
+diff --git a/extensions/deepCABAC/source/Lib/EncLib/CABACEncoder.cpp b/extensions/deepCABAC/source/Lib/EncLib/CABACEncoder.cpp
+index 42561fc..df807e6 100755
+--- a/extensions/deepCABAC/source/Lib/EncLib/CABACEncoder.cpp
++++ b/extensions/deepCABAC/source/Lib/EncLib/CABACEncoder.cpp
+@@ -42,6 +42,8 @@ NON-INFRINGEMENT WITH RESPECT TO THIS SOFTWARE.
+ #include <cstdlib>
+ #include <cmath>
+ 
++//#define DEBUG
++
+ CABACEncoder::CABACEncoder( std::vector<uint8_t>* pBytestream )
+ {
+     m_CtxStore.resize( 6 + g_NumGtxFlags * 2 + 32);
+@@ -52,10 +54,12 @@ CABACEncoder::CABACEncoder( std::vector<uint8_t>* pBytestream )
+ 
+ void CABACEncoder::initCtxMdls()
+ {
++//    std::cout << "[Info][initCtxMdls] begin: dump init values for context models ================>" << std::endl;
+     for (uint32_t ctxId = 0; ctxId < m_CtxStore.size() ; ctxId++)
+     {
+         m_CtxStore[ctxId].initState();
+     }
++//    std::cout << "[Info][initCtxMdls] ================> end " << std::endl;
+ }
+ 
+ void CABACEncoder::startCabacEncoding()
+@@ -124,6 +128,8 @@ uint64_t CABACEncoder::estimateWeightVal( int32_t weightInt )
+ 
+ void  CABACEncoder::encodeWeightVal( int32_t weightInt )
+ {
++//    std::cout << "[Info][encodeWeightVal] begin ================>" << std::endl;
++
+     uint32_t maxAbsPositive = (1 << (BITS_WEIGHT_INTS - 1)) - 1;
+     uint32_t maxAbsNegative = (1 << (BITS_WEIGHT_INTS - 1));
+ 
+@@ -132,8 +138,8 @@ void  CABACEncoder::encodeWeightVal( int32_t weightInt )
+     uint32_t sigFlag = weightInt != 0 ? 1 : 0;
+     int32_t sigctx = m_CtxModeler.getSigCtxId();
+ 
++//    std::cout << "[DBG][encodeWeightVal - 1] call encodeBin() for 1st bit: (ctxId, sigFlag)=> " << sigctx << "," << sigFlag << std::endl;
+     m_BinEncoder.encodeBin(sigFlag, m_CtxStore[ sigctx ]);
+-
+     if (sigFlag)
+     {
+         uint32_t signFlag = weightInt < 0 ? 1 : 0;
+@@ -141,6 +147,7 @@ void  CABACEncoder::encodeWeightVal( int32_t weightInt )
+         if (maxAbsNegative != 0 && maxAbsPositive != 0)
+         {
+             int32_t signCtx = m_CtxModeler.getSignFlagCtxId();
++//            std::cout << "[DBG][encodeWeightVal - 2] call encodeBin() for 2nd bit: (ctxId, signFlag)=> " << signCtx << "," << signFlag << std::endl;
+             m_BinEncoder.encodeBin(signFlag, m_CtxStore[ signCtx ]);
+         }
+ 
+@@ -151,6 +158,7 @@ void  CABACEncoder::encodeWeightVal( int32_t weightInt )
+ 
+         if (maxAbsVal > 1)
+         {
++//            std::cout << "[DBG][encodeWeightVal - 3] call encodeBin() for 3rd bit: (ctxId, grXFlag)=> " << ctxIdx << "," << grXFlag << std::endl;
+             m_BinEncoder.encodeBin(grXFlag, m_CtxStore[ ctxIdx ]);
+         }
+ 
+@@ -161,6 +169,8 @@ void  CABACEncoder::encodeWeightVal( int32_t weightInt )
+             remAbsLevel--;
+             grXFlag = remAbsLevel ? 1 : 0;
+             ctxIdx =  m_CtxModeler.getGtxCtxId(weightInt, numGreaterFlagsCoded);
++
++//            std::cout << "[DBG][encodeWeightVal - 3] call encodeBin() for " << 3+numGreaterFlagsCoded << "th bit: (ctxId, grXFlag)=> " << ctxIdx << "," << grXFlag << std::endl;
+             m_BinEncoder.encodeBin(grXFlag, m_CtxStore[ ctxIdx ]);
+             numGreaterFlagsCoded++;
+         }
+@@ -168,9 +178,10 @@ void  CABACEncoder::encodeWeightVal( int32_t weightInt )
+         if (grXFlag && ((numGreaterFlagsCoded + 1) < maxAbsVal))
+         {
+             remAbsLevel--;
+-            m_BinEncoder.encodeRemAbsLevelNew(remAbsLevel, m_CtxStore);
++            m_BinEncoder.encodeRemAbsLevelNew(remAbsLevel, m_CtxStore, 3+numGreaterFlagsCoded);
+         }
+     }
++//    std::cout << "[Info][encodeWeightVal] ================> end" << std::endl;
+ }
+ 
+ float32_t CABACEncoder::estimateAndDecideWeight( int32_t& bestWeightInt, float32_t origWeight, float32_t weightInterval, float32_t stepsize, float32_t lambda, bool newNorm )
+@@ -249,24 +260,40 @@ float32_t CABACEncoder::estimateAndDecideWeight( int32_t& bestWeightInt, float32
+ 
+ void CABACEncoder::encodeSideinfo( float32_t stepsize, py::array_t<float32_t, py::array::c_style> Weights )
+ {
++#if 0//def DEBUG
++  std::cout << "[Info][encodeSideinfo] begin: encode side info ================>" << std::endl;
++#endif
++
++//  std::cout << "[DBG][encodeSideinfo - 1] call encodeBinsEP()" << std::endl;
++  //sideInfo[sideInfoNum++] = g_NumGtxFlags;
+   m_BinEncoder.encodeBinsEP(g_NumGtxFlags - 4, 4);
+ 
+   py::buffer_info bi_Weights = Weights.request();
+   uint32_t dimensionFlag = bi_Weights.ndim >> 1; //indicates the number of Dimensions: dimensionFlag == 0 -> Dimsize == 1 // dimensionFlag == 1 -> Dimsize == 2 // dimensionFlag == 2 -> Dimsize == 4
+   uint32_t currDim       = 0;
+ 
++  //sideInfo[sideInfoNum++] = dimensionFlag;
+   m_BinEncoder.encodeBinsEP(dimensionFlag, 2);
+ 
++  std::cout << "[Info][encodeSideinfo] bi_Weights.ndim: " << bi_Weights.ndim << std::endl;
++
+   for (uint32_t i = 0; i < bi_Weights.ndim; i++)
+   {
++    //sideInfo[sideInfoNum++] = bi_Weights.shape[i];
++    //std::cout << "[Info][encodeSideinfo] bi_Weights.ndim: " << bi_Weights.ndim << " , bi_Weights.shape[" << i << "] = " << bi_Weights.shape[i] << std::endl;
+     m_BinEncoder.encodeBinsEP(bi_Weights.shape[i], 16);
+   }
+ 
+   FloatUIntUnion fTui;
+ 
+   fTui.f = stepsize;
++  //sideInfo[sideInfoNum++] = (fTui.ui & 0xFFFFu);
+   m_BinEncoder.encodeBinsEP(fTui.ui & 0xFFFFu, 16);
++  //sideInfo[sideInfoNum++] = ((fTui.ui >> 16));
+   m_BinEncoder.encodeBinsEP((fTui.ui >> 16), 16);
++#if 0//def DEBUG
++  std::cout << "[Info][encodeSideinfo] ================> end" << std::endl;
++#endif
+ }
+ 
+ void CABACEncoder::encodeWeightsRD( float32_t* pWeights, float32_t* pIntervals, float32_t stepsize, float32_t lambda, uint32_t layerWidth, uint32_t numWeights )
+@@ -283,8 +310,9 @@ void CABACEncoder::encodeWeightsRD( float32_t* pWeights, float32_t* pIntervals,
+   }
+ }
+ 
+-void CABACEncoder::encodeWeightsRD( float32_t* pWeights, float32_t Interval, float32_t stepsize, float32_t lambda, uint32_t layerWidth, uint32_t numWeights )
++void CABACEncoder::encodeWeightsRD( float32_t* pWeights, float32_t Interval, float32_t stepsize, float32_t lambda, uint32_t layerWidth, uint32_t numWeights, const char* paramName, uint8_t encoderId, uint32_t cmpr_seq_indx)
+ {
++//  std::cout << "[Info][encodeWeightsRD] begin ================>" << std::endl;
+   int32_t bestIntVal = 0;
+   double distSum     = 0.0;
+   m_CtxModeler.resetNeighborCtx();
+@@ -293,7 +321,21 @@ void CABACEncoder::encodeWeightsRD( float32_t* pWeights, float32_t Interval, flo
+   {
+     bestIntVal = 0;
+     distSum += estimateAndDecideWeight( bestIntVal, pWeights[ posInMat ], Interval, stepsize, lambda );
++#if 0//def DEBUG
++    std::cout << "[DBG1][encodeWeightsRD] pWeights[" << posInMat << "] = " << pWeights[ posInMat ] << " , weight = " << bestIntVal << std::endl;
++    
++    m_BinEncoder.showCurrentInfo();
++#endif
++
+     encodeWeightVal( bestIntVal );
++
++    m_BinEncoder.showPushBackCount(bestIntVal);
++
+     m_CtxModeler.updateNeighborCtx( bestIntVal, posInMat, layerWidth );
++//    std::cout << "\n" << std::endl;
+   }
++
++  // start to save push_back() count info.
++  m_BinEncoder.showAllPushBackCount(paramName, encoderId, cmpr_seq_indx);
++//  std::cout << "[Info][encodeWeightsRD] ================> end" << std::endl;
+ }
+diff --git a/extensions/deepCABAC/source/Lib/EncLib/CABACEncoder.h b/extensions/deepCABAC/source/Lib/EncLib/CABACEncoder.h
+index 87e20f6..8e840cb 100755
+--- a/extensions/deepCABAC/source/Lib/EncLib/CABACEncoder.h
++++ b/extensions/deepCABAC/source/Lib/EncLib/CABACEncoder.h
+@@ -66,8 +66,7 @@ public:
+ 
+     void      encodeSideinfo          ( float32_t stepsize, py::array_t<float32_t, py::array::c_style> Weights );
+     void      encodeWeightsRD         ( float32_t* pWeights, float32_t* pIntervals, float32_t stepsize, float32_t lambda, uint32_t layerWidth, uint32_t numWeights );
+-    void      encodeWeightsRD         ( float32_t* pWeights, float32_t   Interval,  float32_t stepsize, float32_t lambda, uint32_t layerWidth, uint32_t numWeights );
+-
++    void      encodeWeightsRD         ( float32_t* pWeights, float32_t   Interval,  float32_t stepsize, float32_t lambda, uint32_t layerWidth, uint32_t numWeights, const char* paramName, uint8_t encoderId, uint32_t cmpr_seq_indx);
+ 
+ 
+ protected:
+diff --git a/extensions/deepCABAC/source/bindings.cpp b/extensions/deepCABAC/source/bindings.cpp
+index c90b7f1..5c736d9 100755
+--- a/extensions/deepCABAC/source/bindings.cpp
++++ b/extensions/deepCABAC/source/bindings.cpp
+@@ -45,7 +45,10 @@ NON-INFRINGEMENT WITH RESPECT TO THIS SOFTWARE.
+ 
+ namespace py = pybind11;
+ 
+-uint32_t g_NumGtxFlags = 10;
++uint32_t g_NumGtxFlags = 4;
++uint32_t sideInfo[10];
++uint32_t sideInfoNum = 0;
++
+ 
+ class Encoder
+ {
+@@ -53,7 +56,7 @@ public:
+   Encoder();
+   ~Encoder();
+   void                  encodeWeightsRD ( py::array_t<float32_t, py::array::c_style> Weights, py::array_t<float32_t, py::array::c_style> Intervals, float32_t stepsize, float32_t lambda );
+-  void                  encodeWeightsRD ( py::array_t<float32_t, py::array::c_style> Weights,             float32_t                      Interval,  float32_t stepsize, float32_t lambda );
++  void                  encodeWeightsRD ( py::array_t<float32_t, py::array::c_style> Weights,             float32_t                      Interval,  float32_t stepsize, float32_t lambda, const char* paramName, uint8_t encoderId, uint32_t cmpr_seq_indx);
+   py::array_t<uint8_t, py::array::c_style>  finish();
+ private:
+   std::vector<uint8_t>  m_Bytestream;
+@@ -92,8 +95,18 @@ void Encoder::encodeWeightsRD( py::array_t<float32_t, py::array::c_style> Weight
+   m_CABACEncoder->encodeWeightsRD( pWeights, pIntervals, stepsize, lambda, layerWidth, numWeights );
+ }
+ 
+-void Encoder::encodeWeightsRD( py::array_t<float32_t, py::array::c_style> Weights, float32_t Interval, float32_t stepsize, float32_t lambda )
++void Encoder::encodeWeightsRD( py::array_t<float32_t, py::array::c_style> Weights, float32_t Interval, float32_t stepsize, float32_t lambda, const char* paramName, uint8_t encoderId, uint32_t cmpr_seq_indx)
+ {
++//  std::cout << "[Info][encodeWeightsRD] In bindings.cpp begin encode ================> " << std::endl;
++
++  if (encoderId == 1U) {  // For encoder 1
++    g_NumGtxFlags = 10;
++  } else {  // For encoder 2
++    g_NumGtxFlags = 10;
++  }
++
++  sideInfoNum = 0;
++//  std::cout << "[DBG][encodeWeightsRD - 1] call encodeSideinfo() , g_NumGtxFlags: " << g_NumGtxFlags << std::endl;
+   m_CABACEncoder->encodeSideinfo( stepsize, Weights );
+ 
+   py::buffer_info bi_Weights    = Weights.request();
+@@ -101,13 +114,18 @@ void Encoder::encodeWeightsRD( py::array_t<float32_t, py::array::c_style> Weight
+ 
+   uint32_t layerWidth = 1;
+   uint32_t numWeights = 1;
++
++//  std::cout << "[DBG][encodeWeightsRD] ======> param name: " << paramName << " , encoder: " << encoderId << " , cmpr_seq_indx: " << cmpr_seq_indx << std::endl;
++//  std::cout << "[DBG][encodeWeightsRD] bi_Weights.ndim: " << bi_Weights.ndim << std::endl;
+   for( size_t idx = 0; idx < bi_Weights.ndim; idx++ )
+   {
+     numWeights *= bi_Weights.shape[idx];
+     if( idx == 0 ) { continue; }
+     layerWidth *= bi_Weights.shape[idx];
+   }
+-  m_CABACEncoder->encodeWeightsRD( pWeights, Interval, stepsize, lambda, layerWidth, numWeights );
++
++//  std::cout << "\n\n[DBG][encodeWeightsRD] In bindings.cpp: enter CABACEncoder.cpp to encode the weights ================>" << std::endl;
++  m_CABACEncoder->encodeWeightsRD( pWeights, Interval, stepsize, lambda, layerWidth, numWeights, paramName, encoderId, cmpr_seq_indx);
+ }
+ 
+ py::array_t<uint8_t, py::array::c_style> Encoder::finish()
+@@ -204,7 +222,7 @@ PYBIND11_MODULE(deepCABAC, m)
+         // binding overloaded functions gets a bit messy.
+         // there is a nicer syntax when relying on C++14, but this is compatible to C++11 as well:
+         .def( "encodeWeightsRD", (void (Encoder::*) (py::array_t<float32_t, py::array::c_style>, py::array_t<float32_t, py::array::c_style>, float32_t, float32_t)) &Encoder::encodeWeightsRD )
+-        .def( "encodeWeightsRD", (void (Encoder::*) (py::array_t<float32_t, py::array::c_style>, float32_t, float32_t, float32_t))                                  &Encoder::encodeWeightsRD )
++        .def( "encodeWeightsRD", (void (Encoder::*) (py::array_t<float32_t, py::array::c_style>, float32_t, float32_t, float32_t, const char* paramName, uint8_t encoderId, uint32_t cmpr_seq_indx))                                  &Encoder::encodeWeightsRD )
+         .def( "finish",          &Encoder::finish          );
+ 
+     py::class_<Decoder>(m, "Decoder")

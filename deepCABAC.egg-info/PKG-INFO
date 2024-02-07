@@ -1,0 +1,7 @@
+Metadata-Version: 2.1
+Name: deepCABAC
+Version: 0.1.0
+Summary: deepCABAC C++ binding using pybind11.
+Home-page: https://hhi.fraunhofer.de
+Author: Stefan Matlage
+Author-email: stefan.matlage@hhi.fraunhofer.de

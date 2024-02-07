@@ -1,0 +1,16 @@
+README.md
+setup.py
+deepCABAC.egg-info/PKG-INFO
+deepCABAC.egg-info/SOURCES.txt
+deepCABAC.egg-info/dependency_links.txt
+deepCABAC.egg-info/not-zip-safe
+deepCABAC.egg-info/requires.txt
+deepCABAC.egg-info/top_level.txt
+extensions/deepCABAC/source/bindings.cpp
+extensions/deepCABAC/source/Lib/CommonLib/ContextModel.cpp
+extensions/deepCABAC/source/Lib/CommonLib/ContextModeler.cpp
+extensions/deepCABAC/source/Lib/DecLib/BinDecoder.cpp
+extensions/deepCABAC/source/Lib/DecLib/CABACDecoder.cpp
+extensions/deepCABAC/source/Lib/EncLib/BinEncoder.cpp
+extensions/deepCABAC/source/Lib/EncLib/BitEstimator.cpp
+extensions/deepCABAC/source/Lib/EncLib/CABACEncoder.cpp
